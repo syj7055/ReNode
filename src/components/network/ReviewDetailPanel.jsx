@@ -1,10 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Link2, Sparkles, User } from "lucide-react";
+import { Link2, Sparkles } from "lucide-react";
 
 function ReviewDetailPanel({ review, connectedCount }) {
   return (
     <div className="glass-card h-full rounded-3xl p-5 sm:p-6">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Selected Review</p>
       <AnimatePresence mode="wait">
         {review ? (
           <motion.div
@@ -13,13 +12,10 @@ function ReviewDetailPanel({ review, connectedCount }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className="mt-3 space-y-4"
+            className="space-y-4"
           >
             <div className="flex items-center justify-between rounded-2xl bg-white/55 p-3">
-              <div className="flex items-center gap-2 text-sm text-slate-700">
-                <User size={15} />
-                <span className="font-medium">{review.author}</span>
-              </div>
+              <span className="text-sm font-medium text-slate-700">선택된 리뷰</span>
               <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800">
                 Helpfulness {review.helpfulnessScore}
               </span>

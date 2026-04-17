@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import { CalendarDays, Star } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 
 const scoreBadgeClass = (score) => {
   if (score >= 90) {
@@ -99,11 +99,6 @@ function ReviewCard({ review, variant = "A", onClick, selected }) {
               <span>{review.date}</span>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-          <Star size={13} className="fill-amber-400 text-amber-400" />
-          {review.rating}
         </div>
       </div>
 

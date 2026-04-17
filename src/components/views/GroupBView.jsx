@@ -4,8 +4,7 @@ function GroupBView({ reviews, selectedReviewId, onReviewOpen }) {
   return (
     <section className="space-y-4">
       <div className="glass-card rounded-3xl p-4 sm:p-5">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">추천 근거 안내</p>
-        <h3 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">유용성 점수 + 핵심문장 강조</h3>
+        <h3 className="text-xl font-semibold tracking-tight text-slate-900">유용성 점수 + 핵심문장 강조</h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           상단 노출 이유를 이해할 수 있도록 카드 우측에 유용성 점수를 표시하고, 공통 핵심 문장을 하이라이트합니다.
         </p>

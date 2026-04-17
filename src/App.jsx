@@ -15,7 +15,7 @@ import { FILTER_PILLS, MOCK_GRAPH_BY_PLACE, MOCK_PLACES, MOCK_REVIEWS } from "./
 const GROUP_CODES = ["A", "B", "C"];
 const GROUP_QUERY_KEY = "group";
 const DEFAULT_FILTERS = [];
-const EMPTY_GRAPH = { nodes: [], links: [] };
+const EMPTY_GRAPH = { nodes: [], links: [], clusterKeywords: [] };
 const MAX_VISIBLE_REVIEWS = 20;
 const DEFAULT_SURVEY = {
   helpfulnessLikert: 4,
@@ -278,6 +278,7 @@ function App() {
         const targetId = getLinkNodeId(link.target);
         return visibleReviewIds.has(sourceId) && visibleReviewIds.has(targetId);
       }),
+      clusterKeywords: baseGraph.clusterKeywords || [],
     };
   }, [placeReviews, selectedPlaceId]);
 
@@ -565,7 +566,6 @@ function App() {
           <div className="glass-card rounded-3xl p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Code {groupCode} · Top {MAX_VISIBLE_REVIEWS}</p>
                 <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                   {selectedPlace ? `${selectedPlace.name} 리뷰` : "Place를 선택하면 추천 리뷰가 표시됩니다"}
                 </h2>

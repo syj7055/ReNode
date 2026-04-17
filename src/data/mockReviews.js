@@ -1,7 +1,8 @@
 import reviewsCsvRaw from "../../resources/reviews_preprocessed.csv?raw";
+import similarityEdges from "../../resources/review_similarity_edges.json";
 
-const CHILD_FRIENDLY_TAG = "child_friendly";
-const SOLO_DINING_TAG = "solo_dining";
+const CHILD_FRIENDLY_TAG = "유아 동반 가능";
+const SOLO_DINING_TAG = "혼밥";
 
 const AVATAR_COLORS = ["#f97316", "#0ea5e9", "#22c55e", "#f43f5e", "#f59e0b", "#14b8a6", "#6366f1", "#8b5cf6"];
 
@@ -10,6 +11,8 @@ const normalizeWhitespace = (value) =>
     .replace(/\r/g, "")
     .replace(/\s+/g, " ")
     .trim();
+
+const normalizeReviewText = (value) => normalizeWhitespace(String(value || "").replace(/접기/g, ""));
 
 const splitTagList = (value) => {
   if (!value) {
@@ -177,8 +180,8 @@ records.forEach((record, idx) => {
 
   const rating = clamp(parseNumber(record.rating, 4.3), 1, 5);
   const helpfulCount = Math.max(0, parseNumber(record.helpful_count, 0));
-  const reviewText = normalizeWhitespace(record.review_text);
-  const scoreRaw = 56 + helpfulCount * 4 + rating * 8 + Math.min(24, reviewText.length / 30) + keywordTags.length * 0.7;
+  const reviewText = normalizeReviewText(record.review_text);
+  const scoreRaw = 56 + helpfulCount * 4 + Math.min(24, reviewText.length / 30) + keywordTags.length * 0.7;
   const helpfulnessScore = clamp(Math.round(scoreRaw), 55, 98);
 
   const reviewRow = {
@@ -197,7 +200,7 @@ records.forEach((record, idx) => {
       ...(childFriendly ? [CHILD_FRIENDLY_TAG] : []),
       ...(soloDining ? [SOLO_DINING_TAG] : []),
     ],
-    keywords: keywordTags.length ? keywordTags : splitTagList(record.visit_info),
+    keywords: Array.from(new Set([...(keywordTags.length ? keywordTags : splitTagList(record.visit_info))])),
     sharedSentences: [extractSharedSentence(reviewText)].filter(Boolean),
     text: reviewText,
   };
@@ -230,11 +233,15 @@ records.forEach((record, idx) => {
 });
 
 const FILTER_PILLS = [
-  ...Array.from(purposeFrequency.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([purpose]) => purpose),
-  CHILD_FRIENDLY_TAG,
-  SOLO_DINING_TAG,
+  ...Array.from(
+    new Set([
+      ...Array.from(purposeFrequency.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([purpose]) => purpose),
+      CHILD_FRIENDLY_TAG,
+      SOLO_DINING_TAG,
+    ])
+  ),
 ];
 
 const MOCK_PLACES = Array.from(placeBucket.values())
@@ -274,50 +281,117 @@ const MOCK_REVIEWS = reviewRows.sort((a, b) => {
   return b.helpfulnessScore - a.helpfulnessScore;
 });
 
-const buildGraphData = (reviews) => {
+const semanticEdgesByPlace = similarityEdges?.by_place || {};
+const semanticNodeMetricsByPlace = similarityEdges?.node_metrics_by_place || {};
+
+const getTopKeywordsForReviews = (reviews, limit = 3) => {
+  const keywordFreq = new Map();
+
+  reviews.forEach((review) => {
+    review.keywords.forEach((keyword) => {
+      const normalized = normalizeWhitespace(keyword);
+      if (!normalized) {
+        return;
+      }
+      keywordFreq.set(normalized, (keywordFreq.get(normalized) || 0) + 1);
+    });
+  });
+
+  const topKeywords = Array.from(keywordFreq.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1];
+      }
+      return a[0].localeCompare(b[0], "ko");
+    })
+    .slice(0, limit)
+    .map(([keyword]) => keyword);
+
+  while (topKeywords.length < limit) {
+    topKeywords.push(`키워드 ${topKeywords.length + 1}`);
+  }
+
+  return topKeywords;
+};
+
+const normalizeRange = (value, min, max, fallback = 0.5) => {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    return fallback;
+  }
+  return clamp((value - min) / (max - min), 0, 1);
+};
+
+const pickPrimaryKeyword = (review, topKeywords) => {
+  const matched = topKeywords.find((keyword) => review.keywords.includes(keyword));
+  return matched || topKeywords[0];
+};
+
+const buildGraphData = (reviews, placeId) => {
+  if (!reviews.length) {
+    return {
+      nodes: [],
+      links: [],
+      clusterKeywords: [],
+    };
+  }
+
+  const topKeywords = getTopKeywordsForReviews(reviews, 3);
+  const placeMetrics = semanticNodeMetricsByPlace[placeId] || {};
   const links = [];
+  const reliabilityScores = reviews.map((review) => review.helpfulnessScore);
+  const reliabilityMin = Math.min(...reliabilityScores);
+  const reliabilityMax = Math.max(...reliabilityScores);
   const nodeMap = new Map(
     reviews.map((review) => [
       review.id,
       {
         id: review.id,
-        label: review.author,
+        reliabilityScore: review.helpfulnessScore,
+        size: Number((3.8 + normalizeRange(review.helpfulnessScore, reliabilityMin, reliabilityMax) * 8.2).toFixed(3)),
+        colorValue: (() => {
+          const value = Number(placeMetrics[review.id]?.color_value);
+          return clamp(Number.isFinite(value) ? value : 0, 0, 1);
+        })(),
+        centralGravity: (() => {
+          const value = Number(placeMetrics[review.id]?.central_gravity);
+          return clamp(Number.isFinite(value) ? value : 0, 0, 1);
+        })(),
+        eigenvectorCentrality: (() => {
+          const value = Number(placeMetrics[review.id]?.eigenvector_centrality);
+          return Number.isFinite(value) ? value : 0;
+        })(),
+        betweennessCentrality: (() => {
+          const value = Number(placeMetrics[review.id]?.betweenness_centrality);
+          return Number.isFinite(value) ? value : 0;
+        })(),
+        primaryKeyword: pickPrimaryKeyword(review, topKeywords),
         helpfulnessScore: review.helpfulnessScore,
         centrality: review.centrality,
         purpose: review.purpose,
       },
     ])
   );
+  const reviewIdSet = new Set(reviews.map((review) => review.id));
+  const placeEdges = Array.isArray(semanticEdgesByPlace[placeId]) ? semanticEdgesByPlace[placeId] : [];
 
-  const keywordSetById = new Map(reviews.map((review) => [review.id, new Set(review.keywords)]));
-
-  for (let i = 0; i < reviews.length; i += 1) {
-    for (let j = i + 1; j < reviews.length; j += 1) {
-      const source = reviews[i];
-      const target = reviews[j];
-
-      const sourceSet = keywordSetById.get(source.id);
-      const targetSet = keywordSetById.get(target.id);
-      let overlapCount = 0;
-
-      sourceSet.forEach((keyword) => {
-        if (targetSet.has(keyword)) {
-          overlapCount += 1;
-        }
-      });
-
-      const samePurpose = source.purpose === target.purpose;
-      if (overlapCount >= 1 || (samePurpose && (i + j) % 3 === 0)) {
-        links.push({
-          source: source.id,
-          target: target.id,
-          overlapCount,
-          weight: Number((1 + overlapCount * 0.45 + (samePurpose ? 0.3 : 0)).toFixed(2)),
-          reason: samePurpose ? "방문 목적 유사" : "공통 키워드 유사",
-        });
-      }
+  placeEdges.forEach((edge) => {
+    const source = String(edge?.source || "");
+    const target = String(edge?.target || "");
+    if (!reviewIdSet.has(source) || !reviewIdSet.has(target)) {
+      return;
     }
-  }
+
+    const weight = Number(edge?.weight);
+    links.push({
+      source,
+      target,
+      weight: Number.isFinite(weight) ? Number(weight.toFixed(4)) : 0,
+      reason: "의미 유사도",
+    });
+  });
 
   const degree = new Map();
   links.forEach((link) => {
@@ -326,19 +400,29 @@ const buildGraphData = (reviews) => {
   });
 
   const maxDegree = Math.max(1, ...Array.from(degree.values()));
+  const nodesByGravity = Array.from(nodeMap.values()).sort((a, b) => b.centralGravity - a.centralGravity);
+  const bridgeCount = Math.max(1, Math.ceil(nodesByGravity.length * 0.1));
+  const bridgeNodeIds = new Set(nodesByGravity.slice(0, bridgeCount).map((node) => node.id));
+  const keywordToClusterIndex = new Map(topKeywords.map((keyword, idx) => [keyword, idx]));
 
   nodeMap.forEach((node) => {
     const degreeRatio = (degree.get(node.id) || 0) / maxDegree;
-    node.centrality = Number((0.25 + degreeRatio * 0.5 + node.helpfulnessScore / 300).toFixed(2));
+    node.clusterIndex = keywordToClusterIndex.get(node.primaryKeyword) ?? 0;
+    node.isBridge = bridgeNodeIds.has(node.id);
+    node.centrality = Number((0.2 + degreeRatio * 0.45 + node.size / 30).toFixed(2));
   });
 
-  return { nodes: Array.from(nodeMap.values()), links };
+  return {
+    nodes: Array.from(nodeMap.values()),
+    links,
+    clusterKeywords: topKeywords,
+  };
 };
 
 const MOCK_GRAPH_BY_PLACE = Object.fromEntries(
   MOCK_PLACES.map((place) => {
     const placeReviews = MOCK_REVIEWS.filter((review) => review.placeId === place.id);
-    return [place.id, buildGraphData(placeReviews)];
+    return [place.id, buildGraphData(placeReviews, place.id)];
   })
 );
 

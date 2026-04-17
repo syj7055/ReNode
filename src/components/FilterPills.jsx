@@ -4,14 +4,6 @@ import clsx from "clsx";
 function FilterPills({ filters, selectedFilters, onToggleFilter }) {
   return (
     <div className="glass-card rounded-3xl p-4 soft-shadow sm:p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Preference Setup</p>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">방문 목적 키워드</h2>
-        </div>
-        <p className="text-xs text-slate-500">일치 리뷰 우선 · 비일치 리뷰 후순위 노출</p>
-      </div>
-
       <div className="flex flex-wrap gap-1.5">
         {filters.map((filter) => {
           const selected = selectedFilters.includes(filter);
