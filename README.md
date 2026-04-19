@@ -72,7 +72,7 @@ npm run build:similarity
 고급 옵션 예시:
 
 ```bash
-.venv/Scripts/python.exe scripts/build_review_similarity_edges.py --threshold 0.72 --batch-size 32
+.venv/Scripts/python.exe scripts/build_review_similarity_edges.py --threshold 0.72 --keyword-threshold 0.58 --keyword-fallback-threshold 0.5 --keyword-top-gap 0.08 --batch-size 32
 ```
 
 웹사이트 런타임에서는 모델/API를 호출하지 않고, 전처리된 `resources/review_similarity_edges.json`만 읽습니다.

@@ -85,6 +85,7 @@ def build_edges(
     progress_every: int,
     keyword_threshold: float,
     keyword_fallback_threshold: float,
+    keyword_top_gap: float,
     max_keywords_per_review: int,
 ) -> Tuple[Dict[str, List[dict]], Dict[str, Dict[str, List[dict]]]]:
     by_place: Dict[str, List[dict]] = {}
@@ -191,6 +192,14 @@ def build_edges(
 
                 scored.sort(key=lambda item: item["keyword"])
                 scored.sort(key=lambda item: item["ranking_score"], reverse=True)
+
+                if scored:
+                    top_score = scored[0]["ranking_score"]
+                    scored = [
+                        entry
+                        for entry in scored
+                        if float(entry["ranking_score"]) >= float(top_score) - keyword_top_gap
+                    ]
 
                 keyword_map_for_place[review_id] = [
                     {
@@ -340,14 +349,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--keyword-threshold",
         type=float,
-        default=0.46,
+        default=0.58,
         help="Hard cosine threshold for review-keyword mapping",
     )
     parser.add_argument(
         "--keyword-fallback-threshold",
         type=float,
-        default=0.38,
+        default=0.5,
         help="Fallback cosine threshold (applied only to original review keywords)",
+    )
+    parser.add_argument(
+        "--keyword-top-gap",
+        type=float,
+        default=0.08,
+        help="Keep only keywords within this score gap from the best keyword",
     )
     parser.add_argument(
         "--max-keywords-per-review",
@@ -392,6 +407,7 @@ def main() -> None:
         progress_every=max(1, args.progress_every),
         keyword_threshold=args.keyword_threshold,
         keyword_fallback_threshold=args.keyword_fallback_threshold,
+        keyword_top_gap=max(0.0, args.keyword_top_gap),
         max_keywords_per_review=max(1, args.max_keywords_per_review),
     )
 
@@ -413,6 +429,7 @@ def main() -> None:
                 "enabled": True,
                 "keyword_threshold": args.keyword_threshold,
                 "keyword_fallback_threshold": args.keyword_fallback_threshold,
+                "keyword_top_gap": max(0.0, args.keyword_top_gap),
                 "max_keywords_per_review": max(1, args.max_keywords_per_review),
             },
             "metrics": metric_meta,

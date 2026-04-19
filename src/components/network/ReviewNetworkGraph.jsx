@@ -209,10 +209,10 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
     fgRef.current.d3ReheatSimulation();
 
     const fitTimer = window.setTimeout(() => {
-      fgRef.current?.zoomToFit(900, 170);
+      fgRef.current?.zoomToFit(760, 130);
     }, 420);
     const refitTimer = window.setTimeout(() => {
-      fgRef.current?.zoomToFit(620, 185);
+      fgRef.current?.zoomToFit(520, 145);
     }, 1200);
 
     return () => {
