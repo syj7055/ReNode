@@ -60,6 +60,39 @@ const toggleFilter = (selectedFilters, targetFilter) => {
 
 const getLinkNodeId = (nodeRef) => (typeof nodeRef === "object" ? nodeRef.id : nodeRef);
 
+const NAVER_BASE_PLACE_ORDER = [
+  "멘모찌",
+  "랑콩뜨레",
+  "댓잎장어",
+  "비프브라운",
+  "동동국밥",
+  "투썸플레이스",
+  "청학동 칼국수",
+  "스테이X머스트",
+  "맛있는 고기에 솜씨를 더하다",
+  "스시미즈기와",
+  "호훈테이블",
+  "그리즐리버거",
+  "최쉐프",
+  "당몽당",
+  "하삼동커피",
+  "커피에 반하다",
+  "커피퍽",
+  "노도커피",
+  "포밍버터",
+];
+
+const normalizePlaceOrderKey = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[·・]/g, "")
+    .replace(/[^가-힣a-z0-9]/g, "");
+
+const NAVER_PLACE_ORDER_INDEX = new Map(
+  NAVER_BASE_PLACE_ORDER.map((name, idx) => [normalizePlaceOrderKey(name), idx])
+);
+
 const makeSessionLog = (groupCode) => ({
   sessionId: `rg-${Date.now()}-${Math.floor(Math.random() * 9000) + 1000}`,
   groupCode,
@@ -153,13 +186,14 @@ const buildLogExport = (sessionLog) => {
 
 const rankPlaceReviews = (reviews, preferences, groupCode) => {
   const preferenceSet = new Set(preferences);
+  const usePreferenceRanking = groupCode === "B";
 
   return reviews
     .map((review) => {
       const matchedCount = review.visitTags.filter((tag) => preferenceSet.has(tag)).length;
-      const mismatchCount = Math.max(0, preferences.length - matchedCount);
-      const preferenceBoost = preferences.length > 0 ? matchedCount * 1200 : 0;
-      const mismatchPenalty = preferences.length > 0 ? mismatchCount * 14 : 0;
+      const mismatchCount = usePreferenceRanking ? Math.max(0, preferences.length - matchedCount) : 0;
+      const preferenceBoost = usePreferenceRanking && preferences.length > 0 ? matchedCount * 1200 : 0;
+      const mismatchPenalty = usePreferenceRanking && preferences.length > 0 ? mismatchCount * 14 : 0;
       const groupWeight = groupCode === "B" ? review.helpfulnessScore * 14 : review.helpfulnessScore * 10;
       const rankScore = preferenceBoost + groupWeight + review.centrality * 90 - mismatchPenalty;
 
@@ -237,22 +271,86 @@ function App() {
     activeReviewRef.current = null;
   }, []);
 
-  const reviewCountMap = useMemo(() => {
-    const map = Object.fromEntries(MOCK_PLACES.map((place) => [place.id, { ranked: 0, total: 0 }]));
+  const reviewsByPlace = useMemo(() => {
+    const buckets = new Map(MOCK_PLACES.map((place) => [place.id, []]));
 
     MOCK_REVIEWS.forEach((review) => {
-      if (!map[review.placeId]) {
-        return;
+      if (!buckets.has(review.placeId)) {
+        buckets.set(review.placeId, []);
       }
-      map[review.placeId].total += 1;
+      buckets.get(review.placeId).push(review);
     });
 
-    Object.keys(map).forEach((placeId) => {
-      map[placeId].ranked = Math.min(MAX_VISIBLE_REVIEWS, map[placeId].total);
-    });
-
-    return map;
+    return buckets;
   }, []);
+
+  const sortedPlaces = useMemo(() => {
+    const base = [...MOCK_PLACES];
+
+    if (groupCode === "A") {
+      return base.sort((a, b) => {
+        const aIdx = NAVER_PLACE_ORDER_INDEX.get(normalizePlaceOrderKey(a.name));
+        const bIdx = NAVER_PLACE_ORDER_INDEX.get(normalizePlaceOrderKey(b.name));
+
+        const aRank = Number.isFinite(aIdx) ? aIdx : Number.MAX_SAFE_INTEGER;
+        const bRank = Number.isFinite(bIdx) ? bIdx : Number.MAX_SAFE_INTEGER;
+
+        if (aRank !== bRank) {
+          return aRank - bRank;
+        }
+        return a.name.localeCompare(b.name, "ko");
+      });
+    }
+
+    const preferenceSet = new Set(selectedPreferences);
+    if (preferenceSet.size === 0) {
+      return base.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    }
+
+    const placeScoreMap = new Map();
+    base.forEach((place) => {
+      let signal = 0;
+      let matchedReviews = 0;
+      let helpfulnessSum = 0;
+
+      const reviews = reviewsByPlace.get(place.id) || [];
+      reviews.forEach((review) => {
+        const hitCount = review.visitTags.reduce((acc, tag) => acc + (preferenceSet.has(tag) ? 1 : 0), 0);
+        if (hitCount <= 0) {
+          return;
+        }
+
+        signal += hitCount;
+        matchedReviews += 1;
+        helpfulnessSum += review.helpfulnessScore;
+      });
+
+      placeScoreMap.set(place.id, {
+        signal,
+        matchedReviews,
+        avgHelpfulness: matchedReviews > 0 ? helpfulnessSum / matchedReviews : 0,
+      });
+    });
+
+    return base.sort((a, b) => {
+      const aScore = placeScoreMap.get(a.id) || { signal: 0, matchedReviews: 0, avgHelpfulness: 0 };
+      const bScore = placeScoreMap.get(b.id) || { signal: 0, matchedReviews: 0, avgHelpfulness: 0 };
+
+      if (bScore.signal !== aScore.signal) {
+        return bScore.signal - aScore.signal;
+      }
+      if (bScore.matchedReviews !== aScore.matchedReviews) {
+        return bScore.matchedReviews - aScore.matchedReviews;
+      }
+      if (bScore.avgHelpfulness !== aScore.avgHelpfulness) {
+        return bScore.avgHelpfulness - aScore.avgHelpfulness;
+      }
+      if (b.rating !== a.rating) {
+        return b.rating - a.rating;
+      }
+      return a.name.localeCompare(b.name, "ko");
+    });
+  }, [groupCode, reviewsByPlace, selectedPreferences]);
 
   const placeReviews = useMemo(() => {
     if (!selectedPlaceId) {
@@ -544,8 +642,8 @@ function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[1480px] px-4 pb-10 pt-6 sm:px-8">
-      <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+    <main className="mx-auto min-h-screen w-full max-w-[1820px] px-3 pb-10 pt-6 sm:px-6">
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
           <FilterPills
             filters={FILTER_PILLS}
@@ -554,11 +652,10 @@ function App() {
           />
 
           <RestaurantGrid
-            places={MOCK_PLACES}
+            places={sortedPlaces}
             selectedPlaceId={selectedPlaceId}
             selectedPreferences={selectedPreferences}
             onSelectPlace={handleSelectPlace}
-            reviewCountMap={reviewCountMap}
           />
         </aside>
 
@@ -570,7 +667,13 @@ function App() {
                   {selectedPlace ? `${selectedPlace.name} 리뷰` : "Place를 선택하면 추천 리뷰가 표시됩니다"}
                 </h2>
                 {selectedPlace && (
-                  <p className="mt-1 text-sm text-slate-600">선호 키워드 우선순위 + 유용성 점수 기반으로 상위 {placeReviews.length}개를 노출합니다.</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {groupCode === "A"
+                      ? `네이버 지도 기본 정렬 기준으로 상위 ${placeReviews.length}개를 노출합니다.`
+                      : groupCode === "B"
+                        ? `선호 키워드 우선순위 + 유용성 점수 기반으로 상위 ${placeReviews.length}개를 노출합니다.`
+                        : `유용성 점수 + 네트워크 중심성 기반으로 상위 ${placeReviews.length}개를 노출합니다.`}
+                  </p>
                 )}
               </div>
 

@@ -40,6 +40,7 @@ const parseNumber = (value, fallback = 0) => {
 const parseBinary = (value) => parseNumber(value, 0) === 1;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const clamp01 = (value) => clamp(value, 0, 1);
 
 const hashText = (text) => {
   let hash = 0;
@@ -281,37 +282,87 @@ const MOCK_REVIEWS = reviewRows.sort((a, b) => {
   return b.helpfulnessScore - a.helpfulnessScore;
 });
 
-const semanticEdgesByPlace = similarityEdges?.by_place || {};
-const semanticNodeMetricsByPlace = similarityEdges?.node_metrics_by_place || {};
+const keywordPlaceFrequency = (() => {
+  const map = new Map();
 
-const getTopKeywordsForReviews = (reviews, limit = 3) => {
-  const keywordFreq = new Map();
+  placeBucket.forEach((bucket) => {
+    const uniqueKeywords = new Set();
 
-  reviews.forEach((review) => {
-    review.keywords.forEach((keyword) => {
-      const normalized = normalizeWhitespace(keyword);
-      if (!normalized) {
-        return;
-      }
-      keywordFreq.set(normalized, (keywordFreq.get(normalized) || 0) + 1);
+    bucket.rows.forEach((review) => {
+      review.keywords.forEach((keyword) => {
+        const normalized = normalizeWhitespace(keyword);
+        if (normalized) {
+          uniqueKeywords.add(normalized);
+        }
+      });
+    });
+
+    uniqueKeywords.forEach((keyword) => {
+      map.set(keyword, (map.get(keyword) || 0) + 1);
     });
   });
 
-  const topKeywords = Array.from(keywordFreq.entries())
+  return map;
+})();
+
+const totalPlaceCount = Math.max(1, placeBucket.size);
+
+const semanticEdgesByPlace = similarityEdges?.by_place || {};
+const semanticNodeMetricsByPlace = similarityEdges?.node_metrics_by_place || {};
+
+const getKeywordIdf = (keyword) => {
+  const df = keywordPlaceFrequency.get(keyword) || 0;
+  return Math.log((1 + totalPlaceCount) / (1 + df)) + 1;
+};
+
+const getKeywordLabelingModel = (reviews, placeMetrics) => {
+  const keywordInfo = new Map();
+  const reliabilityScores = reviews.map((review) => review.helpfulnessScore);
+  const reliabilityMin = Math.min(...reliabilityScores);
+  const reliabilityMax = Math.max(...reliabilityScores);
+
+  reviews.forEach((review) => {
+    const reliability = normalizeRange(review.helpfulnessScore, reliabilityMin, reliabilityMax, 0.5);
+    const eigen = clamp01(Number(placeMetrics[review.id]?.color_value || 0));
+    const influence = 0.62 * reliability + 0.38 * eigen;
+
+    Array.from(new Set(review.keywords.map((keyword) => normalizeWhitespace(keyword)).filter(Boolean))).forEach((keyword) => {
+      const current = keywordInfo.get(keyword) || { count: 0, score: 0, idf: getKeywordIdf(keyword) };
+      current.count += 1;
+      current.score += influence;
+      keywordInfo.set(keyword, current);
+    });
+  });
+
+  const ranked = Array.from(keywordInfo.entries())
+    .map(([keyword, value]) => ({
+      keyword,
+      score: (value.score + value.count * 0.35) * value.idf,
+      count: value.count,
+    }))
     .sort((a, b) => {
-      if (b[1] !== a[1]) {
-        return b[1] - a[1];
+      if (b.score !== a.score) {
+        return b.score - a.score;
       }
-      return a[0].localeCompare(b[0], "ko");
-    })
-    .slice(0, limit)
-    .map(([keyword]) => keyword);
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return a.keyword.localeCompare(b.keyword, "ko");
+    });
 
-  while (topKeywords.length < limit) {
-    topKeywords.push(`키워드 ${topKeywords.length + 1}`);
-  }
+  return {
+    ranked,
+    keywordInfo,
+    topKeywords: ranked.slice(0, 3).map((item) => item.keyword),
+  };
+};
 
-  return topKeywords;
+const getTopKeywordsForReviews = (reviews, placeMetrics, limit = 3) => {
+  const labelingModel = getKeywordLabelingModel(reviews, placeMetrics);
+  return {
+    topKeywords: labelingModel.ranked.slice(0, limit).map((item) => item.keyword),
+    keywordInfo: labelingModel.keywordInfo,
+  };
 };
 
 const normalizeRange = (value, min, max, fallback = 0.5) => {
@@ -325,6 +376,10 @@ const normalizeRange = (value, min, max, fallback = 0.5) => {
 };
 
 const pickPrimaryKeyword = (review, topKeywords) => {
+  if (!topKeywords.length) {
+    return review.purpose || "리뷰 군집";
+  }
+
   const matched = topKeywords.find((keyword) => review.keywords.includes(keyword));
   return matched || topKeywords[0];
 };
@@ -338,26 +393,27 @@ const buildGraphData = (reviews, placeId) => {
     };
   }
 
-  const topKeywords = getTopKeywordsForReviews(reviews, 3);
   const placeMetrics = semanticNodeMetricsByPlace[placeId] || {};
+  const { topKeywords, keywordInfo } = getTopKeywordsForReviews(reviews, placeMetrics, 3);
   const links = [];
   const reliabilityScores = reviews.map((review) => review.helpfulnessScore);
   const reliabilityMin = Math.min(...reliabilityScores);
   const reliabilityMax = Math.max(...reliabilityScores);
+  const reviewById = new Map(reviews.map((review) => [review.id, review]));
   const nodeMap = new Map(
     reviews.map((review) => [
       review.id,
       {
         id: review.id,
         reliabilityScore: review.helpfulnessScore,
-        size: Number((3.8 + normalizeRange(review.helpfulnessScore, reliabilityMin, reliabilityMax) * 8.2).toFixed(3)),
+        size: Number((6.8 + normalizeRange(review.helpfulnessScore, reliabilityMin, reliabilityMax) * 12.4).toFixed(3)),
         colorValue: (() => {
           const value = Number(placeMetrics[review.id]?.color_value);
-          return clamp(Number.isFinite(value) ? value : 0, 0, 1);
+          return clamp01(Number.isFinite(value) ? value : 0);
         })(),
         centralGravity: (() => {
           const value = Number(placeMetrics[review.id]?.central_gravity);
-          return clamp(Number.isFinite(value) ? value : 0, 0, 1);
+          return clamp01(Number.isFinite(value) ? value : 0);
         })(),
         eigenvectorCentrality: (() => {
           const value = Number(placeMetrics[review.id]?.eigenvector_centrality);
@@ -371,6 +427,8 @@ const buildGraphData = (reviews, placeId) => {
         helpfulnessScore: review.helpfulnessScore,
         centrality: review.centrality,
         purpose: review.purpose,
+        keywords: review.keywords,
+        relatedKeywords: [],
       },
     ])
   );
@@ -412,10 +470,76 @@ const buildGraphData = (reviews, placeId) => {
     node.centrality = Number((0.2 + degreeRatio * 0.45 + node.size / 30).toFixed(2));
   });
 
+  const neighborsByNode = new Map();
+  links.forEach((link) => {
+    if (!neighborsByNode.has(link.source)) {
+      neighborsByNode.set(link.source, []);
+    }
+    if (!neighborsByNode.has(link.target)) {
+      neighborsByNode.set(link.target, []);
+    }
+
+    neighborsByNode.get(link.source).push({ neighborId: link.target, weight: link.weight });
+    neighborsByNode.get(link.target).push({ neighborId: link.source, weight: link.weight });
+  });
+
+  nodeMap.forEach((node) => {
+    const review = reviewById.get(node.id);
+    const candidates = new Map();
+    const addCandidate = (keyword, value) => {
+      const normalized = normalizeWhitespace(keyword);
+      if (!normalized || !Number.isFinite(value) || value <= 0) {
+        return;
+      }
+      candidates.set(normalized, (candidates.get(normalized) || 0) + value);
+    };
+
+    const ownKeywords = Array.from(new Set((review?.keywords || []).map((keyword) => normalizeWhitespace(keyword)).filter(Boolean)));
+    ownKeywords.forEach((keyword) => {
+      const info = keywordInfo.get(keyword);
+      const prior = info ? info.score / Math.max(1, info.count) : 0.7;
+      addCandidate(keyword, 1.25 + prior * 0.35);
+    });
+
+    const neighbors = neighborsByNode.get(node.id) || [];
+    neighbors.forEach(({ neighborId, weight }) => {
+      const neighborReview = reviewById.get(neighborId);
+      const neighborReliability = normalizeRange(
+        neighborReview?.helpfulnessScore || 0,
+        reliabilityMin,
+        reliabilityMax,
+        0.5
+      );
+      const edgeStrength = clamp01(Number(weight || 0));
+      const support = edgeStrength * (0.65 + neighborReliability * 0.35);
+
+      Array.from(new Set((neighborReview?.keywords || []).map((keyword) => normalizeWhitespace(keyword)).filter(Boolean))).forEach(
+        (keyword) => {
+          const info = keywordInfo.get(keyword);
+          const idf = info?.idf || getKeywordIdf(keyword);
+          const base = info ? info.score / Math.max(1, info.count) : 0.75;
+          addCandidate(keyword, support * (0.8 + base * 0.28) * idf);
+        }
+      );
+    });
+
+    const relatedKeywords = Array.from(candidates.entries())
+      .sort((a, b) => {
+        if (b[1] !== a[1]) {
+          return b[1] - a[1];
+        }
+        return a[0].localeCompare(b[0], "ko");
+      })
+      .slice(0, 4)
+      .map(([keyword]) => keyword);
+
+    node.relatedKeywords = relatedKeywords.length > 0 ? relatedKeywords : ownKeywords.slice(0, 4);
+  });
+
   return {
     nodes: Array.from(nodeMap.values()),
     links,
-    clusterKeywords: topKeywords,
+    clusterKeywords: topKeywords.length ? topKeywords : ["핵심 키워드", "리뷰 군집", "브릿지"],
   };
 };
 

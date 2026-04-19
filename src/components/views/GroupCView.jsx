@@ -24,13 +24,16 @@ function GroupCView({ reviews, graphData, selectedReviewId, onReviewOpen }) {
       <div className="glass-card rounded-3xl p-4 sm:p-5">
         <h3 className="text-xl font-semibold tracking-tight text-slate-900">리뷰 관계 네트워크 + 상세 패널</h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          노드를 선택하면 연결된 리뷰 관계가 강조되고, 우측 패널에서 세부 내용을 확인할 수 있습니다.
+          노드를 선택하면 연결된 리뷰 관계가 강조되고, 우측 패널에서 세부 내용을 즉시 확인할 수 있습니다.
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          노드 크기=유용성 점수, 노드 색상=고유벡터 중심성, 노드 위치=핵심 키워드 군집(중앙은 브릿지)
         </p>
       </div>
 
       {reviews.length ? (
-        <div className="grid gap-4 lg:grid-cols-[1.9fr_1fr]">
-          <div className="glass-card rounded-3xl p-3 sm:p-4">
+        <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
+          <div className="glass-card rounded-3xl p-2 sm:p-3">
             <ReviewNetworkGraph
               graphData={graphData}
               selectedReviewId={selectedReviewId}

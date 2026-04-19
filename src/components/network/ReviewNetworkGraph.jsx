@@ -5,17 +5,17 @@ const getNodeId = (nodeRef) => (typeof nodeRef === "object" ? nodeRef.id : nodeR
 const clamp01 = (value) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 
 const FOCUS_LAYOUT = [
-  { x: -170, y: -105 },
-  { x: 160, y: -135 },
-  { x: 40, y: 165 },
+  { x: -260, y: -170 },
+  { x: 250, y: -170 },
+  { x: 0, y: 220 },
 ];
 
 const colorFromScale = (value, alpha = 1) => {
   const v = clamp01(value);
-  const hue = 210 - 210 * v;
-  const saturation = 78;
-  const lightness = 57 - 10 * v;
-  return `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+  const red = Math.round(59 + (239 - 59) * v);
+  const green = Math.round(130 + (68 - 130) * v);
+  const blue = Math.round(246 + (68 - 246) * v);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 };
 
 const createSemanticClusterForce = (focusByKeyword) => {
@@ -33,7 +33,7 @@ const createSemanticClusterForce = (focusByKeyword) => {
       }
 
       const gravityDamping = 1 - clamp01(node.centralGravity);
-      const strength = 0.045 + gravityDamping * 0.06;
+      const strength = 0.075 + gravityDamping * 0.12;
       node.vx += (focus.x - node.x) * strength * alpha;
       node.vy += (focus.y - node.y) * strength * alpha;
     });
@@ -55,7 +55,7 @@ const createBridgeCenterForce = () => {
         return;
       }
 
-      const strength = 0.13 + clamp01(node.centralGravity) * 0.34;
+      const strength = 0.15 + clamp01(node.centralGravity) * 0.42;
       node.vx += (0 - node.x) * strength * alpha;
       node.vy += (0 - node.y) * strength * alpha;
     });
@@ -83,7 +83,7 @@ const createCollisionForce = () => {
         const dx = (b.x || 0) - (a.x || 0);
         const dy = (b.y || 0) - (a.y || 0);
         const distSq = dx * dx + dy * dy || 1e-6;
-        const minDistance = (a.size || 6) + (b.size || 6) + 6;
+        const minDistance = (a.size || 8) + (b.size || 8) + 8;
 
         if (distSq >= minDistance * minDistance) {
           continue;
@@ -128,7 +128,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
 
       setSize({
         width: Math.max(320, Math.floor(entry.contentRect.width)),
-        height: Math.max(360, Math.floor(entry.contentRect.height)),
+        height: Math.max(460, Math.floor(entry.contentRect.height)),
       });
     });
 
@@ -166,17 +166,17 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
     }
 
     const linkForce = fgRef.current.d3Force("link");
-    linkForce?.distance((link) => 120 - Math.min(58, clamp01(Number(link.weight || 0)) * 70));
-    linkForce?.strength((link) => 0.18 + Math.min(0.62, clamp01(Number(link.weight || 0)) * 0.75));
+    linkForce?.distance((link) => 185 - Math.min(88, clamp01(Number(link.weight || 0)) * 120));
+    linkForce?.strength((link) => 0.12 + Math.min(0.72, clamp01(Number(link.weight || 0)) * 0.95));
 
-    fgRef.current.d3Force("charge")?.strength(-210);
+    fgRef.current.d3Force("charge")?.strength(-430);
     fgRef.current.d3Force("semantic-cluster", createSemanticClusterForce(focusByKeyword));
     fgRef.current.d3Force("bridge-center", createBridgeCenterForce());
     fgRef.current.d3Force("collision", createCollisionForce());
     fgRef.current.d3ReheatSimulation();
 
     const fitTimer = window.setTimeout(() => {
-      fgRef.current.zoomToFit(520, 75);
+      fgRef.current.zoomToFit(360, 16);
     }, 120);
 
     return () => {
@@ -253,7 +253,13 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
   const hoveredClusterKeyword = hoverContext?.mode === "cluster" ? hoverContext.keyword : null;
 
   return (
-    <div ref={containerRef} className="network-canvas relative h-[460px] overflow-hidden rounded-3xl">
+    <div ref={containerRef} className="network-canvas relative h-[660px] overflow-hidden rounded-3xl">
+      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[330px] rounded-2xl bg-white/88 p-3 shadow-sm ring-1 ring-slate-200/70">
+        <p className="text-[11px] font-bold tracking-[0.06em] text-slate-700">그래프 읽는 법</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+          크기: 리뷰 유용성 점수, 색상: 고유벡터 중심성, 위치: 핵심 키워드 군집(중앙은 브릿지 노드)
+        </p>
+      </div>
       <ForceGraph2D
         ref={fgRef}
         width={size.width}
@@ -261,11 +267,12 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
         graphData={graphData}
         cooldownTicks={180}
         backgroundColor="rgba(0,0,0,0)"
-        d3VelocityDecay={0.22}
+        d3VelocityDecay={0.18}
+        enableNodeDrag={false}
         linkWidth={(link) => {
           const sourceId = getNodeId(link.source);
           const targetId = getNodeId(link.target);
-          const baseWidth = 0.65 + clamp01(Number(link.weight || 0)) * 2.4;
+          const baseWidth = 1.25 + clamp01(Number(link.weight || 0)) * 3.2;
           const isSelectedLink = sourceId === selectedReviewId || targetId === selectedReviewId;
           const inFocus =
             activeFocusNodeIds &&
@@ -278,7 +285,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
             return baseWidth + 0.8;
           }
           if (dimByFocus) {
-            return Math.max(0.24, baseWidth * 0.28);
+            return Math.max(0.42, baseWidth * 0.34);
           }
           return baseWidth;
         }}
@@ -287,7 +294,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
           const targetId = getNodeId(link.target);
           const isSelectedLink = sourceId === selectedReviewId || targetId === selectedReviewId;
           if (isSelectedLink) {
-            return "rgba(249, 115, 22, 0.92)";
+            return "rgba(15, 23, 42, 0.96)";
           }
           const inFocus =
             activeFocusNodeIds &&
@@ -295,19 +302,19 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
             activeFocusNodeIds.has(targetId);
 
           if (inFocus) {
-            return "rgba(56, 189, 248, 0.82)";
+            return "rgba(51, 65, 85, 0.86)";
           }
           if (dimByFocus) {
-            return "rgba(148, 163, 184, 0.12)";
+            return "rgba(203, 213, 225, 0.4)";
           }
-          return "rgba(148, 163, 184, 0.48)";
+          return "rgba(100, 116, 139, 0.64)";
         }}
         onRenderFramePost={(ctx, globalScale) => {
           if (!focalPoints.length) {
             return;
           }
 
-          const fontSize = Math.max(14, 38 / Math.max(globalScale, 0.3));
+          const fontSize = Math.max(11, 24 / Math.max(globalScale, 0.4));
 
           ctx.save();
           ctx.textAlign = "center";
@@ -316,7 +323,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
 
           focalPoints.forEach((focus) => {
             const dimmed = hoveredClusterKeyword && hoveredClusterKeyword !== focus.keyword;
-            ctx.fillStyle = dimmed ? "rgba(100, 116, 139, 0.14)" : "rgba(100, 116, 139, 0.27)";
+            ctx.fillStyle = dimmed ? "rgba(100, 116, 139, 0.2)" : "rgba(71, 85, 105, 0.38)";
             ctx.fillText(focus.keyword, focus.x, focus.y);
           });
 
@@ -333,10 +340,10 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
           const isSelected = node.id === selectedReviewId;
           const isHovered = node.id === hoveredNodeId;
           const inFocus = activeFocusNodeIds ? activeFocusNodeIds.has(node.id) : true;
-          const radius = Math.max(3.2, Number(node.size) || 6);
+          const radius = Math.max(7.6, Number(node.size) || 10.8);
 
-          const nodeAlpha = dimByFocus && !inFocus ? 0.2 : 1;
-          const fill = colorFromScale(node.colorValue, 0.92 * nodeAlpha);
+          const nodeAlpha = dimByFocus && !inFocus ? 0.34 : 1;
+          const fill = colorFromScale(node.colorValue, 0.98 * nodeAlpha);
 
           ctx.beginPath();
           ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
@@ -344,15 +351,15 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
           ctx.fill();
 
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + (isSelected ? 5.2 : isHovered ? 3.6 : node.isBridge ? 2.8 : 1.6), 0, 2 * Math.PI, false);
-          ctx.lineWidth = isSelected ? 2.8 : node.isBridge ? 2.1 : 1.25;
+          ctx.arc(node.x, node.y, radius + (isSelected ? 6.1 : isHovered ? 4.4 : node.isBridge ? 3.6 : 2.2), 0, 2 * Math.PI, false);
+          ctx.lineWidth = isSelected ? 3.2 : node.isBridge ? 2.4 : 1.8;
 
           if (isSelected) {
-            ctx.strokeStyle = "rgba(249, 115, 22, 0.96)";
-          } else if (node.isBridge) {
-            ctx.strokeStyle = `rgba(220, 38, 38, ${dimByFocus && !inFocus ? 0.24 : 0.85})`;
+            ctx.strokeStyle = "rgba(15, 23, 42, 0.96)";
+          } else if (inFocus) {
+            ctx.strokeStyle = "rgba(51, 65, 85, 0.82)";
           } else {
-            ctx.strokeStyle = `rgba(255, 255, 255, ${dimByFocus && !inFocus ? 0.2 : 0.72})`;
+            ctx.strokeStyle = `rgba(241, 245, 249, ${dimByFocus && !inFocus ? 0.42 : 0.88})`;
           }
 
           ctx.stroke();

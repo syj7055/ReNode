@@ -52,7 +52,7 @@ npm run preview
 
 - 임베딩 모델: `snunlp/KR-SBERT-V40K-klueNLI-augSTS`
 - 유사도 기준: `cosine similarity >= tau`
-- 기본 임계값: `tau = 0.70`
+- 기본 임계값: `tau = 0.60`
 - 계산 범위: 같은 `place_id` 내부 리뷰끼리만
 - 추가 산출: `node_metrics_by_place` ( `color_value`, `central_gravity`, 고유벡터/매개 중심성 원값 )
 
@@ -71,7 +71,7 @@ npm run build:similarity
 고급 옵션 예시:
 
 ```bash
-.venv/Scripts/python.exe scripts/build_review_similarity_edges.py --threshold 0.7 --batch-size 32
+.venv/Scripts/python.exe scripts/build_review_similarity_edges.py --threshold 0.6 --batch-size 32
 ```
 
 웹사이트 런타임에서는 모델/API를 호출하지 않고, 전처리된 `resources/review_similarity_edges.json`만 읽습니다.

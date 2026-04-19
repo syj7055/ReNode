@@ -219,7 +219,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.7,
+        default=0.6,
         help="Cosine similarity threshold",
     )
     parser.add_argument(
