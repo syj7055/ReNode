@@ -370,7 +370,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-keywords-per-review",
         type=int,
-        default=3,
+        default=2,
         help="Max number of mapped related keywords saved per review",
     )
     parser.add_argument(

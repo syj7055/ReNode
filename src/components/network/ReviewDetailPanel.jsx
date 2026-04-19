@@ -1,7 +1,7 @@
 import { Link2, Sparkles } from "lucide-react";
 
 function ReviewDetailPanel({ review, connectedCount }) {
-  const relatedKeywords = (review?.relatedKeywords || review?.keywords || []).slice(0, 4);
+  const relatedKeywords = (review?.relatedKeywords || review?.keywords || []).slice(0, 2);
 
   return (
     <div className="glass-card h-full rounded-3xl p-5 sm:p-6">
@@ -33,7 +33,7 @@ function ReviewDetailPanel({ review, connectedCount }) {
                 ))}
               </div>
               <p className="mt-2 text-[11px] text-slate-500">
-                연결강도 × 리뷰 신뢰도 × 장소 특이도(IDF)로 상위 키워드만 노출
+                리뷰-키워드 임베딩 유사도 기준 상위 키워드만 노출
               </p>
             </div>
 

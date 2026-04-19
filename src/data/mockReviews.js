@@ -389,7 +389,12 @@ const normalizeRange = (value, min, max, fallback = 0.5) => {
   return clamp((value - min) / (max - min), 0, 1);
 };
 
-const pickPrimaryKeyword = (review, topKeywords) => {
+const pickPrimaryKeyword = (review, topKeywords, mappedKeywords = []) => {
+  if (mappedKeywords.length) {
+    const mappedMatch = topKeywords.find((keyword) => mappedKeywords.includes(keyword));
+    return mappedMatch || mappedKeywords[0];
+  }
+
   if (!topKeywords.length) {
     return review.purpose || "리뷰 군집";
   }
@@ -408,8 +413,50 @@ const buildGraphData = (reviews, placeId) => {
   }
 
   const placeMetrics = semanticNodeMetricsByPlace[placeId] || {};
-  const { topKeywords } = getTopKeywordsForReviews(reviews, placeMetrics, 3);
+  const { topKeywords: fallbackTopKeywords } = getTopKeywordsForReviews(reviews, placeMetrics, 3);
   const relatedKeywordMap = semanticRelatedKeywordsByPlace?.[placeId] || {};
+
+  const mappedKeywordsByReview = new Map(
+    reviews.map((review) => {
+      const mappedKeywords = (Array.isArray(relatedKeywordMap?.[review.id]) ? relatedKeywordMap[review.id] : [])
+        .map((entry) => ({
+          keyword: normalizeWhitespace(entry?.keyword),
+          score: Number(entry?.score || 0),
+        }))
+        .filter((entry) => entry.keyword)
+        .sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+          return a.keyword.localeCompare(b.keyword, "ko");
+        })
+        .map((entry) => entry.keyword)
+        .slice(0, 2);
+
+      return [review.id, mappedKeywords];
+    })
+  );
+
+  const mappedKeywordScore = new Map();
+  mappedKeywordsByReview.forEach((keywords) => {
+    keywords.forEach((keyword, index) => {
+      const gain = index === 0 ? 1.2 : 0.8;
+      mappedKeywordScore.set(keyword, (mappedKeywordScore.get(keyword) || 0) + gain);
+    });
+  });
+
+  const alignedClusterKeywords = Array.from(mappedKeywordScore.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1];
+      }
+      return a[0].localeCompare(b[0], "ko");
+    })
+    .slice(0, 3)
+    .map(([keyword]) => keyword);
+
+  const clusterKeywords = alignedClusterKeywords.length > 0 ? alignedClusterKeywords : fallbackTopKeywords;
+
   const links = [];
   const reliabilityScores = reviews.map((review) => review.helpfulnessScore);
   const reliabilityMin = Math.min(...reliabilityScores);
@@ -438,12 +485,12 @@ const buildGraphData = (reviews, placeId) => {
           const value = Number(placeMetrics[review.id]?.betweenness_centrality);
           return Number.isFinite(value) ? value : 0;
         })(),
-        primaryKeyword: pickPrimaryKeyword(review, topKeywords),
+        primaryKeyword: pickPrimaryKeyword(review, clusterKeywords, mappedKeywordsByReview.get(review.id) || []),
         helpfulnessScore: review.helpfulnessScore,
         centrality: review.centrality,
         purpose: review.purpose,
         keywords: review.keywords,
-        relatedKeywords: [],
+        relatedKeywords: mappedKeywordsByReview.get(review.id) || [],
       },
     ])
   );
@@ -476,7 +523,7 @@ const buildGraphData = (reviews, placeId) => {
   const nodesByGravity = Array.from(nodeMap.values()).sort((a, b) => b.centralGravity - a.centralGravity);
   const bridgeCount = Math.max(1, Math.ceil(nodesByGravity.length * 0.1));
   const bridgeNodeIds = new Set(nodesByGravity.slice(0, bridgeCount).map((node) => node.id));
-  const keywordToClusterIndex = new Map(topKeywords.map((keyword, idx) => [keyword, idx]));
+  const keywordToClusterIndex = new Map(clusterKeywords.map((keyword, idx) => [keyword, idx]));
 
   nodeMap.forEach((node) => {
     const degreeRatio = (degree.get(node.id) || 0) / maxDegree;
@@ -485,30 +532,10 @@ const buildGraphData = (reviews, placeId) => {
     node.centrality = Number((0.2 + degreeRatio * 0.45 + node.size / 30).toFixed(2));
   });
 
-  nodeMap.forEach((node) => {
-    const review = reviewById.get(node.id);
-    const ownKeywords = Array.from(new Set((review?.keywords || []).map((keyword) => normalizeWhitespace(keyword)).filter(Boolean)));
-    const mappedKeywords = (Array.isArray(relatedKeywordMap?.[node.id]) ? relatedKeywordMap[node.id] : [])
-      .map((entry) => ({
-        keyword: normalizeWhitespace(entry?.keyword),
-        score: Number(entry?.score || 0),
-      }))
-      .filter((entry) => entry.keyword)
-      .sort((a, b) => {
-        if (b.score !== a.score) {
-          return b.score - a.score;
-        }
-        return a.keyword.localeCompare(b.keyword, "ko");
-      })
-      .map((entry) => entry.keyword);
-
-    node.relatedKeywords = mappedKeywords.length > 0 ? mappedKeywords.slice(0, 4) : [];
-  });
-
   return {
     nodes: Array.from(nodeMap.values()),
     links,
-    clusterKeywords: topKeywords.length ? topKeywords : ["핵심 키워드", "리뷰 군집", "브릿지"],
+    clusterKeywords: clusterKeywords.length ? clusterKeywords : ["핵심 키워드", "리뷰 군집", "브릿지"],
   };
 };
 
