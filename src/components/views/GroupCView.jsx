@@ -27,7 +27,7 @@ function GroupCView({ reviews, graphData, selectedReviewId, onReviewOpen }) {
           노드를 선택하면 연결된 리뷰 관계가 강조되고, 우측 패널에서 세부 내용을 즉시 확인할 수 있습니다.
         </p>
         <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          노드 크기=유용성 점수, 노드 색상=고유벡터 중심성, 노드 위치=핵심 키워드 군집(중앙은 브릿지)
+          노드 크기=유용성 점수, 노드 색상=네트워크 영향력 점수, 노드 위치=핵심 키워드 군집(중앙은 브릿지)
         </p>
       </div>
 

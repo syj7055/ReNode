@@ -309,13 +309,14 @@ const totalPlaceCount = Math.max(1, placeBucket.size);
 
 const semanticEdgesByPlace = similarityEdges?.by_place || {};
 const semanticNodeMetricsByPlace = similarityEdges?.node_metrics_by_place || {};
+const semanticRelatedKeywordsByPlace = similarityEdges?.related_keywords_by_place || {};
 
 const getKeywordIdf = (keyword) => {
   const df = keywordPlaceFrequency.get(keyword) || 0;
   return Math.log((1 + totalPlaceCount) / (1 + df)) + 1;
 };
 
-const getKeywordLabelingModel = (reviews, placeMetrics) => {
+const getKeywordLabelingModel = (reviews, placeMetrics, relatedKeywordMap = {}) => {
   const keywordInfo = new Map();
   const reliabilityScores = reviews.map((review) => review.helpfulnessScore);
   const reliabilityMin = Math.min(...reliabilityScores);
@@ -326,10 +327,22 @@ const getKeywordLabelingModel = (reviews, placeMetrics) => {
     const eigen = clamp01(Number(placeMetrics[review.id]?.color_value || 0));
     const influence = 0.62 * reliability + 0.38 * eigen;
 
-    Array.from(new Set(review.keywords.map((keyword) => normalizeWhitespace(keyword)).filter(Boolean))).forEach((keyword) => {
+    const mappedEntries = Array.isArray(relatedKeywordMap?.[review.id]) ? relatedKeywordMap[review.id] : [];
+    const mappedScoreByKeyword = new Map(
+      mappedEntries
+        .map((entry) => [normalizeWhitespace(entry?.keyword), clamp01(Number(entry?.score || 0))])
+        .filter(([keyword]) => Boolean(keyword))
+    );
+    const keywordSource =
+      mappedScoreByKeyword.size > 0
+        ? Array.from(mappedScoreByKeyword.keys())
+        : Array.from(new Set(review.keywords.map((keyword) => normalizeWhitespace(keyword)).filter(Boolean)));
+
+    keywordSource.forEach((keyword) => {
       const current = keywordInfo.get(keyword) || { count: 0, score: 0, idf: getKeywordIdf(keyword) };
+      const semanticScore = mappedScoreByKeyword.has(keyword) ? mappedScoreByKeyword.get(keyword) : 0.42;
       current.count += 1;
-      current.score += influence;
+      current.score += influence * (0.65 + semanticScore * 1.15);
       keywordInfo.set(keyword, current);
     });
   });
@@ -358,7 +371,8 @@ const getKeywordLabelingModel = (reviews, placeMetrics) => {
 };
 
 const getTopKeywordsForReviews = (reviews, placeMetrics, limit = 3) => {
-  const labelingModel = getKeywordLabelingModel(reviews, placeMetrics);
+  const relatedKeywordMap = semanticRelatedKeywordsByPlace?.[reviews[0]?.placeId] || {};
+  const labelingModel = getKeywordLabelingModel(reviews, placeMetrics, relatedKeywordMap);
   return {
     topKeywords: labelingModel.ranked.slice(0, limit).map((item) => item.keyword),
     keywordInfo: labelingModel.keywordInfo,
@@ -394,7 +408,8 @@ const buildGraphData = (reviews, placeId) => {
   }
 
   const placeMetrics = semanticNodeMetricsByPlace[placeId] || {};
-  const { topKeywords, keywordInfo } = getTopKeywordsForReviews(reviews, placeMetrics, 3);
+  const { topKeywords } = getTopKeywordsForReviews(reviews, placeMetrics, 3);
+  const relatedKeywordMap = semanticRelatedKeywordsByPlace?.[placeId] || {};
   const links = [];
   const reliabilityScores = reviews.map((review) => review.helpfulnessScore);
   const reliabilityMin = Math.min(...reliabilityScores);
@@ -470,70 +485,24 @@ const buildGraphData = (reviews, placeId) => {
     node.centrality = Number((0.2 + degreeRatio * 0.45 + node.size / 30).toFixed(2));
   });
 
-  const neighborsByNode = new Map();
-  links.forEach((link) => {
-    if (!neighborsByNode.has(link.source)) {
-      neighborsByNode.set(link.source, []);
-    }
-    if (!neighborsByNode.has(link.target)) {
-      neighborsByNode.set(link.target, []);
-    }
-
-    neighborsByNode.get(link.source).push({ neighborId: link.target, weight: link.weight });
-    neighborsByNode.get(link.target).push({ neighborId: link.source, weight: link.weight });
-  });
-
   nodeMap.forEach((node) => {
     const review = reviewById.get(node.id);
-    const candidates = new Map();
-    const addCandidate = (keyword, value) => {
-      const normalized = normalizeWhitespace(keyword);
-      if (!normalized || !Number.isFinite(value) || value <= 0) {
-        return;
-      }
-      candidates.set(normalized, (candidates.get(normalized) || 0) + value);
-    };
-
     const ownKeywords = Array.from(new Set((review?.keywords || []).map((keyword) => normalizeWhitespace(keyword)).filter(Boolean)));
-    ownKeywords.forEach((keyword) => {
-      const info = keywordInfo.get(keyword);
-      const prior = info ? info.score / Math.max(1, info.count) : 0.7;
-      addCandidate(keyword, 1.25 + prior * 0.35);
-    });
-
-    const neighbors = neighborsByNode.get(node.id) || [];
-    neighbors.forEach(({ neighborId, weight }) => {
-      const neighborReview = reviewById.get(neighborId);
-      const neighborReliability = normalizeRange(
-        neighborReview?.helpfulnessScore || 0,
-        reliabilityMin,
-        reliabilityMax,
-        0.5
-      );
-      const edgeStrength = clamp01(Number(weight || 0));
-      const support = edgeStrength * (0.65 + neighborReliability * 0.35);
-
-      Array.from(new Set((neighborReview?.keywords || []).map((keyword) => normalizeWhitespace(keyword)).filter(Boolean))).forEach(
-        (keyword) => {
-          const info = keywordInfo.get(keyword);
-          const idf = info?.idf || getKeywordIdf(keyword);
-          const base = info ? info.score / Math.max(1, info.count) : 0.75;
-          addCandidate(keyword, support * (0.8 + base * 0.28) * idf);
-        }
-      );
-    });
-
-    const relatedKeywords = Array.from(candidates.entries())
+    const mappedKeywords = (Array.isArray(relatedKeywordMap?.[node.id]) ? relatedKeywordMap[node.id] : [])
+      .map((entry) => ({
+        keyword: normalizeWhitespace(entry?.keyword),
+        score: Number(entry?.score || 0),
+      }))
+      .filter((entry) => entry.keyword)
       .sort((a, b) => {
-        if (b[1] !== a[1]) {
-          return b[1] - a[1];
+        if (b.score !== a.score) {
+          return b.score - a.score;
         }
-        return a[0].localeCompare(b[0], "ko");
+        return a.keyword.localeCompare(b.keyword, "ko");
       })
-      .slice(0, 4)
-      .map(([keyword]) => keyword);
+      .map((entry) => entry.keyword);
 
-    node.relatedKeywords = relatedKeywords.length > 0 ? relatedKeywords : ownKeywords.slice(0, 4);
+    node.relatedKeywords = mappedKeywords.length > 0 ? mappedKeywords.slice(0, 4) : ownKeywords.slice(0, 4);
   });
 
   return {

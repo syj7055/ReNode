@@ -33,7 +33,7 @@ const createSemanticClusterForce = (focusByKeyword) => {
       }
 
       const gravityDamping = 1 - clamp01(node.centralGravity);
-      const strength = 0.075 + gravityDamping * 0.12;
+      const strength = 0.038 + gravityDamping * 0.058;
       node.vx += (focus.x - node.x) * strength * alpha;
       node.vy += (focus.y - node.y) * strength * alpha;
     });
@@ -55,7 +55,7 @@ const createBridgeCenterForce = () => {
         return;
       }
 
-      const strength = 0.15 + clamp01(node.centralGravity) * 0.42;
+      const strength = 0.082 + clamp01(node.centralGravity) * 0.23;
       node.vx += (0 - node.x) * strength * alpha;
       node.vy += (0 - node.y) * strength * alpha;
     });
@@ -83,14 +83,14 @@ const createCollisionForce = () => {
         const dx = (b.x || 0) - (a.x || 0);
         const dy = (b.y || 0) - (a.y || 0);
         const distSq = dx * dx + dy * dy || 1e-6;
-        const minDistance = (a.size || 8) + (b.size || 8) + 8;
+        const minDistance = (a.size || 8) + (b.size || 8) + 14;
 
         if (distSq >= minDistance * minDistance) {
           continue;
         }
 
         const distance = Math.sqrt(distSq);
-        const overlap = ((minDistance - distance) / distance) * 0.5 * alpha;
+        const overlap = ((minDistance - distance) / distance) * 0.58 * alpha;
         const pushX = dx * overlap;
         const pushY = dy * overlap;
 
@@ -160,24 +160,57 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
     [focalPoints]
   );
 
+  const normalizedColorByNodeId = useMemo(() => {
+    if (!graphData.nodes.length) {
+      return new Map();
+    }
+
+    const values = graphData.nodes.map((node) => {
+      const rawEigen = Number(node.eigenvectorCentrality);
+      if (Number.isFinite(rawEigen)) {
+        return rawEigen;
+      }
+      return Number.isFinite(Number(node.colorValue)) ? Number(node.colorValue) : 0;
+    });
+
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || maxValue <= minValue) {
+      return new Map(graphData.nodes.map((node) => [node.id, 0.5]));
+    }
+
+    return new Map(
+      graphData.nodes.map((node) => {
+        const rawEigen = Number(node.eigenvectorCentrality);
+        const base = Number.isFinite(rawEigen)
+          ? rawEigen
+          : Number.isFinite(Number(node.colorValue))
+            ? Number(node.colorValue)
+            : minValue;
+        const normalized = clamp01((base - minValue) / (maxValue - minValue));
+        return [node.id, normalized];
+      })
+    );
+  }, [graphData.nodes]);
+
   useEffect(() => {
     if (!fgRef.current || graphData.nodes.length === 0) {
       return;
     }
 
     const linkForce = fgRef.current.d3Force("link");
-    linkForce?.distance((link) => 185 - Math.min(88, clamp01(Number(link.weight || 0)) * 120));
-    linkForce?.strength((link) => 0.12 + Math.min(0.72, clamp01(Number(link.weight || 0)) * 0.95));
+    linkForce?.distance((link) => 270 - Math.min(140, clamp01(Number(link.weight || 0)) * 170));
+    linkForce?.strength((link) => 0.08 + Math.min(0.52, clamp01(Number(link.weight || 0)) * 0.72));
 
-    fgRef.current.d3Force("charge")?.strength(-430);
+    fgRef.current.d3Force("charge")?.strength(-670);
     fgRef.current.d3Force("semantic-cluster", createSemanticClusterForce(focusByKeyword));
     fgRef.current.d3Force("bridge-center", createBridgeCenterForce());
     fgRef.current.d3Force("collision", createCollisionForce());
     fgRef.current.d3ReheatSimulation();
 
     const fitTimer = window.setTimeout(() => {
-      fgRef.current.zoomToFit(360, 16);
-    }, 120);
+      fgRef.current.zoomToFit(760, 92);
+    }, 260);
 
     return () => {
       window.clearTimeout(fitTimer);
@@ -257,7 +290,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
       <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[330px] rounded-2xl bg-white/88 p-3 shadow-sm ring-1 ring-slate-200/70">
         <p className="text-[11px] font-bold tracking-[0.06em] text-slate-700">그래프 읽는 법</p>
         <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-          크기: 리뷰 유용성 점수, 색상: 고유벡터 중심성, 위치: 핵심 키워드 군집(중앙은 브릿지 노드)
+          크기: 리뷰 유용성 점수, 색상: 네트워크 영향력 점수, 위치: 핵심 키워드 군집(중앙은 브릿지 노드)
         </p>
       </div>
       <ForceGraph2D
@@ -265,9 +298,9 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
         width={size.width}
         height={size.height}
         graphData={graphData}
-        cooldownTicks={180}
+        cooldownTicks={240}
         backgroundColor="rgba(0,0,0,0)"
-        d3VelocityDecay={0.18}
+        d3VelocityDecay={0.22}
         enableNodeDrag={false}
         linkWidth={(link) => {
           const sourceId = getNodeId(link.source);
@@ -343,7 +376,8 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
           const radius = Math.max(7.6, Number(node.size) || 10.8);
 
           const nodeAlpha = dimByFocus && !inFocus ? 0.34 : 1;
-          const fill = colorFromScale(node.colorValue, 0.98 * nodeAlpha);
+          const normalizedColor = normalizedColorByNodeId.get(node.id);
+          const fill = colorFromScale(normalizedColor ?? node.colorValue, 0.98 * nodeAlpha);
 
           ctx.beginPath();
           ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
