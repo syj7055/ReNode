@@ -502,7 +502,7 @@ const buildGraphData = (reviews, placeId) => {
       })
       .map((entry) => entry.keyword);
 
-    node.relatedKeywords = mappedKeywords.length > 0 ? mappedKeywords.slice(0, 4) : ownKeywords.slice(0, 4);
+    node.relatedKeywords = mappedKeywords.length > 0 ? mappedKeywords.slice(0, 4) : [];
   });
 
   return {

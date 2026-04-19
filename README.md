@@ -56,6 +56,7 @@ npm run preview
 - 계산 범위: 같은 `place_id` 내부 리뷰끼리만
 - 추가 산출: `node_metrics_by_place` ( `color_value`, `central_gravity`, 네트워크 영향력/브릿지성 원값 )
 - 연관 키워드 매핑: 리뷰 임베딩 vs 키워드 임베딩 코사인 유사도 기반 hard threshold 매핑(`related_keywords_by_place`)
+- 엄격 기준에서 매칭 결과가 비어도, 해당 리뷰의 최고 유사도 키워드 1개는 보존
 
 실행 전(최초 1회) Python 패키지 설치:
 
@@ -72,7 +73,7 @@ npm run build:similarity
 고급 옵션 예시:
 
 ```bash
-.venv/Scripts/python.exe scripts/build_review_similarity_edges.py --threshold 0.72 --keyword-threshold 0.58 --keyword-fallback-threshold 0.5 --keyword-top-gap 0.08 --batch-size 32
+.venv/Scripts/python.exe scripts/build_review_similarity_edges.py --threshold 0.72 --keyword-threshold 0.64 --keyword-fallback-threshold 0.6 --keyword-top-gap 0.04 --max-keywords-per-review 3 --batch-size 32
 ```
 
 웹사이트 런타임에서는 모델/API를 호출하지 않고, 전처리된 `resources/review_similarity_edges.json`만 읽습니다.

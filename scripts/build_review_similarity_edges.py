@@ -176,19 +176,22 @@ def build_edges(
                                 }
                             )
 
-                if not scored and own_keywords:
-                    best_keyword = max(
-                        own_keywords,
-                        key=lambda kw: float(keyword_scores[review_idx, keyword_to_index[kw]]),
-                    )
-                    best_score = float(keyword_scores[review_idx, keyword_to_index[best_keyword]])
-                    scored.append(
-                        {
-                            "keyword": best_keyword,
-                            "score": best_score,
-                            "ranking_score": best_score + 0.02,
-                        }
-                    )
+                # Ensure at least one keyword is retained for each review.
+                if not scored:
+                    fallback_pool = own_keywords if own_keywords else keyword_candidates
+                    if fallback_pool:
+                        best_keyword = max(
+                            fallback_pool,
+                            key=lambda kw: float(keyword_scores[review_idx, keyword_to_index[kw]]),
+                        )
+                        best_score = float(keyword_scores[review_idx, keyword_to_index[best_keyword]])
+                        scored.append(
+                            {
+                                "keyword": best_keyword,
+                                "score": best_score,
+                                "ranking_score": best_score + (0.02 if best_keyword in own_keywords else 0.0),
+                            }
+                        )
 
                 scored.sort(key=lambda item: item["keyword"])
                 scored.sort(key=lambda item: item["ranking_score"], reverse=True)
@@ -349,25 +352,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--keyword-threshold",
         type=float,
-        default=0.58,
+        default=0.64,
         help="Hard cosine threshold for review-keyword mapping",
     )
     parser.add_argument(
         "--keyword-fallback-threshold",
         type=float,
-        default=0.5,
+        default=0.6,
         help="Fallback cosine threshold (applied only to original review keywords)",
     )
     parser.add_argument(
         "--keyword-top-gap",
         type=float,
-        default=0.08,
+        default=0.04,
         help="Keep only keywords within this score gap from the best keyword",
     )
     parser.add_argument(
         "--max-keywords-per-review",
         type=int,
-        default=4,
+        default=3,
         help="Max number of mapped related keywords saved per review",
     )
     parser.add_argument(
