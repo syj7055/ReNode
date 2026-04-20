@@ -468,7 +468,7 @@ const buildGraphData = (reviews, placeId) => {
       {
         id: review.id,
         reliabilityScore: review.helpfulnessScore,
-        size: Number((6.8 + normalizeRange(review.helpfulnessScore, reliabilityMin, reliabilityMax) * 12.4).toFixed(3)),
+        size: Number((4.2 + Math.pow(normalizeRange(review.helpfulnessScore, reliabilityMin, reliabilityMax), 1.95) * 24.8).toFixed(3)),
         colorValue: (() => {
           const value = Number(placeMetrics[review.id]?.color_value);
           return clamp01(Number.isFinite(value) ? value : 0);

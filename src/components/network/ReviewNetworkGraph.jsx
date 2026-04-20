@@ -292,9 +292,9 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
 
   return (
     <div ref={containerRef} className="network-canvas relative h-[660px] overflow-hidden rounded-3xl">
-      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[330px] rounded-2xl bg-white/88 p-3 shadow-sm ring-1 ring-slate-200/70">
-        <p className="text-[11px] font-bold tracking-[0.06em] text-slate-700">그래프 읽는 법</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+      <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[460px]">
+        <p className="text-[15px] font-semibold tracking-[0.04em] text-slate-500/72">그래프 읽는 법</p>
+        <p className="mt-2 text-[14px] leading-relaxed text-slate-500/68">
           크기: 리뷰 유용성 점수, 색상: 네트워크 영향력 점수, 위치: 핵심 키워드 군집(중앙은 브릿지 노드)
         </p>
       </div>
@@ -340,7 +340,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
             return;
           }
 
-          const fontSize = Math.max(11, 24 / Math.max(globalScale, 0.4));
+          const fontSize = Math.max(18, 46 / Math.max(globalScale, 0.4));
 
           ctx.save();
           ctx.textAlign = "center";
@@ -349,7 +349,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
 
           focalPoints.forEach((focus) => {
             const dimmed = hoveredClusterKeyword && hoveredClusterKeyword !== focus.keyword;
-            ctx.fillStyle = dimmed ? "rgba(100, 116, 139, 0.2)" : "rgba(71, 85, 105, 0.38)";
+            ctx.fillStyle = dimmed ? "rgba(100, 116, 139, 0.26)" : "rgba(71, 85, 105, 0.52)";
             ctx.fillText(focus.keyword, focus.x, focus.y);
           });
 
@@ -366,7 +366,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
           const isSelected = node.id === selectedReviewId;
           const isHovered = node.id === hoveredNodeId;
           const inFocus = activeFocusNodeIds ? activeFocusNodeIds.has(node.id) : true;
-          const radius = Math.max(7.6, Number(node.size) || 10.8);
+          const radius = Math.max(4.4, Number(node.size) || 8.6);
 
           const nodeAlpha = dimByFocus && !inFocus ? 0.34 : 1;
           const normalizedColor = normalizedColorByNodeId.get(node.id);
