@@ -295,7 +295,7 @@ function ReviewNetworkGraph({ graphData, selectedReviewId, onSelectReviewId }) {
       <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[460px]">
         <p className="text-[15px] font-semibold tracking-[0.04em] text-slate-500/72">그래프 읽는 법</p>
         <p className="mt-2 text-[14px] leading-relaxed text-slate-500/68">
-          크기: 리뷰 유용성 점수, 색상: 네트워크 영향력 점수, 위치: 핵심 키워드 군집(중앙은 브릿지 노드)
+          크기: 리뷰 유용성 점수, 색상: 네트워크 영향력 점수, 위치: 핵심 키워드 기반 군집화
         </p>
       </div>
       <ForceGraph2D

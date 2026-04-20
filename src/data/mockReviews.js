@@ -1,4 +1,5 @@
 import reviewsCsvRaw from "../../resources/reviews_preprocessed.csv?raw";
+import utilityScoresCsvRaw from "../../resources/review_utility_scores-3.csv?raw";
 import similarityEdges from "../../resources/review_similarity_edges.json";
 
 const CHILD_FRIENDLY_TAG = "유아 동반 가능";
@@ -13,6 +14,7 @@ const normalizeWhitespace = (value) =>
     .trim();
 
 const normalizeReviewText = (value) => normalizeWhitespace(String(value || "").replace(/접기/g, ""));
+const normalizeAuthorKey = (value) => normalizeWhitespace(value).toLowerCase();
 
 const splitTagList = (value) => {
   if (!value) {
@@ -142,6 +144,34 @@ const parseCsv = (csvText) => {
 const tableRows = parseCsv(reviewsCsvRaw);
 const header = tableRows[0] || [];
 
+const utilityTableRows = parseCsv(utilityScoresCsvRaw);
+const utilityHeader = utilityTableRows[0] || [];
+
+const utilityScoreByUser = utilityTableRows
+  .slice(1)
+  .filter((row) => row.some((cell) => normalizeWhitespace(cell).length > 0))
+  .map((row) => {
+    const mapped = {};
+    utilityHeader.forEach((key, idx) => {
+      mapped[key] = row[idx] || "";
+    });
+    return mapped;
+  })
+  .reduce((acc, row) => {
+    const userKey = normalizeAuthorKey(row.user_name);
+    const score = parseNumber(row.final_utility_score, Number.NaN);
+    if (!userKey || !Number.isFinite(score)) {
+      return acc;
+    }
+
+    const clamped = clamp(score, 0, 100);
+    const current = acc.get(userKey);
+    if (!Number.isFinite(current) || clamped > current) {
+      acc.set(userKey, clamped);
+    }
+    return acc;
+  }, new Map());
+
 const records = tableRows
   .slice(1)
   .filter((row) => row.some((cell) => normalizeWhitespace(cell).length > 0))
@@ -161,6 +191,8 @@ const reviewRows = [];
 records.forEach((record, idx) => {
   const placeId = normalizeWhitespace(record.place_id) || `place-${idx + 1}`;
   const rawPlaceName = normalizeWhitespace(record.place_name) || `Place ${idx + 1}`;
+  const authorName = normalizeWhitespace(record.user_name) || "익명 사용자";
+  const utilityScore = utilityScoreByUser.get(normalizeAuthorKey(authorName));
   const placeName = removeBranchSuffix(rawPlaceName);
   const purposeTags = splitTagList(record["방문 목적"]);
   const keywordTags = splitTagList(record.keywords);
@@ -183,14 +215,14 @@ records.forEach((record, idx) => {
   const helpfulCount = Math.max(0, parseNumber(record.helpful_count, 0));
   const reviewText = normalizeReviewText(record.review_text);
   const scoreRaw = 56 + helpfulCount * 4 + Math.min(24, reviewText.length / 30) + keywordTags.length * 0.7;
-  const helpfulnessScore = clamp(Math.round(scoreRaw), 55, 98);
+  const helpfulnessScore = Number.isFinite(utilityScore) ? Math.round(utilityScore) : clamp(Math.round(scoreRaw), 55, 98);
 
   const reviewRow = {
     id: `${placeId}-review-${idx + 1}`,
     placeId,
     placeName,
-    author: normalizeWhitespace(record.user_name) || "익명 사용자",
-    avatarColor: pickAvatarColor(normalizeWhitespace(record.user_name) || `user-${idx}`),
+    author: authorName,
+    avatarColor: pickAvatarColor(authorName || `user-${idx}`),
     rating: Number(rating.toFixed(1)),
     helpfulnessScore,
     centrality: Number((0.22 + helpfulnessScore / 130).toFixed(2)),
