@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:similarity": ".venv/Scripts/python.exe scripts/build_review_similarity_edges.py",
+    "build:shared-sentences": ".venv/Scripts/python.exe scripts/build_review_similarity_edges.py --only-shared-sentences --progress-every 1",
     "label:keywords": "node scripts/label-review-keywords.mjs",
     "label:keywords:sample": "node scripts/label-review-keywords.mjs --limit 30 --output resources/reviews_preprocessed.sample_labeled.csv"
   },
